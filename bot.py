@@ -2,6 +2,7 @@ from logging_setup import logger
 from handlers.start_handler import start
 from handlers.handle_button import handle_button
 from handlers.confirm_handler import confirm
+from handlers.check_group_type_handler import checkgroup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
 from dotenv import load_dotenv
 import os
@@ -22,6 +23,8 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_button))
     app.add_handler(CommandHandler("confirm", confirm))
+    app.add_handler(CommandHandler("checkgroup", checkgroup))
+
 
     logger.info("Bot started...")
     app.run_polling()
