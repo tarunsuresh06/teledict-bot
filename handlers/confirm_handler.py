@@ -1,73 +1,112 @@
 from logging_setup import logger
 from telegram import Update
 from telegram.ext import ContextTypes
-from supabase_setup import supabase  
-
-# ====== Supabase Save Function ======
-def save_group(chat, invite_link, member_count, user_id):
-    try:
-        data = {
-            "telegram_id": str(chat.id),
-            "title": chat.title,
-            "description":  "",
-            "invite_link":  invite_link or"",
-            "member_count": member_count,
-            "submitted_by": str(user_id)
-        }
-        supabase.table("groups").insert(data).execute()
-        logger.info(f"Saved group: {chat.title} ({chat.id})")
-    except Exception as e:
-        logger.exception("Failed to save group to Supabase")
-
+from supabase_setup import supabase
 
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
-    full_chat = await context.bot.get_chat(chat.id)
-
-    if chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("❌ Please use this command inside a group where the bot is added.")
-        return
-
-    logger.info(f"/confirm used in {chat.title} ({chat.id}) by {user.username} ({user.id})")
 
     try:
-        # Check if bot is admin
+        # Delete the user's command message
+        await update.message.delete()
+    except Exception as e:
+        logger.error(f"Failed to delete command message: {e}")
+
+    # Send initial status message
+    status_msg = await context.bot.send_message(
+        chat_id=chat.id,
+        text="⏳ Verifying the group type...",
+        parse_mode="Markdown"
+    )
+
+    try:
+        # 1. Ensure command is used in a supergroup
+        if chat.type == "group":
+            await status_msg.edit_text(
+                "🟠 This is a *normal group*.\n\n"
+                "⚠️ Teledict requires *supergroup* features to function correctly.\n"
+                "Please convert this group to a supergroup:\n"
+                "• Open group settings\n"
+                "• Enable chat history for new members or set a public link\n\n"
+                "Once converted, re-add me and use /confirm again.",
+                parse_mode="Markdown"
+            )
+            logger.info(f"/confirm used in normal group by {user.username} ({user.id})")
+            return
+        elif chat.type != "supergroup":
+            await status_msg.edit_text(f"❓ Unsupported chat type: {chat.type}")
+            logger.info(f"/confirm used in unsupported chat type by {user.username} ({user.id})")
+            return
+
+        await status_msg.edit_text("✅ Group type verified. Checking bot admin status...", parse_mode="Markdown")
+
+        # 2. Check if bot is admin
         bot_member = await chat.get_member(context.bot.id)
         if bot_member.status not in ["administrator", "creator"]:
-            await update.message.reply_text("❌ I need to be an admin in this group to confirm it.")
+            await status_msg.edit_text("❌ I need to be an admin in this group to confirm it.", parse_mode="Markdown")
+            logger.info(f"Bot is not admin in {chat.title} ({chat.id})")
             return
 
-        # Check if already in DB
-        existing = supabase.table("groups").select("id").eq("telegram_id", str(chat.id)).execute()
-        if existing.data:
-            await update.message.reply_text("⚠️ This group is already listed in the directory.")
-            return
+        await status_msg.edit_text("✅ Bot is admin. Checking if you are the group owner...", parse_mode="Markdown")
 
-        # Optional: you can also check if the user is admin of the group
+        # 3. Check if user is the owner (creator)
         user_member = await chat.get_member(user.id)
-        if user_member.status not in ["administrator", "creator"]:
-            await update.message.reply_text("❌ Only a group admin can confirm this group.")
+        if user_member.status != "creator":
+            await status_msg.edit_text("❌ Only the group owner can confirm this group.", parse_mode="Markdown")
+            logger.info(f"User {user.username} ({user.id}) is not the owner in {chat.title} ({chat.id})")
             return
 
-        # Gather data
+        await status_msg.edit_text("✅ You are the group owner. Checking your Teledict profile...", parse_mode="Markdown")
+
+        # 4. Check if user exists in 'profiles'
+        profile_resp = supabase.table("profiles").select("telegram_id").eq("telegram_id", str(user.id)).execute()
+        if not profile_resp.data:
+            await status_msg.edit_text("❌ You must sign up at https://teledict.in/ before confirming a group.", parse_mode="Markdown")
+            logger.info(f"User {user.username} ({user.id}) not found in profiles table.")
+            return
+
+        await status_msg.edit_text("✅ Profile found. Checking if group already exists...", parse_mode="Markdown")
+
+        # 5. Check if group already exists
+        group_resp = supabase.table("groups").select("id").eq("chat_id", str(chat.id)).execute()
+        if group_resp.data:
+            await status_msg.edit_text("⚠️ This group is already listed in the directory.", parse_mode="Markdown")
+            logger.info(f"Group {chat.title} ({chat.id}) already exists in groups table.")
+            return
+
+        await status_msg.edit_text("✅ Group not listed. Saving group to directory...", parse_mode="Markdown")
+
+        # 6. Gather group data
+        full_chat = await context.bot.get_chat(chat.id)
         title = full_chat.title
-        description = full_chat.description or "No description"
-        invite_link = full_chat.invite_link or "No link set"
+        username = getattr(full_chat, "username", None)
+        invite_link = getattr(full_chat, "invite_link", None) or "No link set"
         member_count = await context.bot.get_chat_member_count(chat.id)
 
-        # Save to Supabase
-        save_group(chat, invite_link, member_count, user.id)
+        # 7. Insert group into 'groups' table
+        group_data = {
+            "chat_id": str(chat.id),
+            "title": title,
+            "username": username,
+            "invite_link": invite_link,
+            "member_count": member_count,
+            "submitted_by": str(user.id)
+        }
+        supabase.table("groups").insert(group_data).execute()
+        logger.info(f"Group inserted: {title} ({chat.id}) by {user.username} ({user.id})")
 
-        await update.message.reply_text(
-            f"✅ *Group confirmed and added!*\n\n"
-            f"**Title:** {title}\n"
-            f"**Members:** {member_count}\n"
-            f"**Invite Link:** {invite_link}",
+        # 8. Success message
+        await status_msg.edit_text(
+            f"✅ Group confirmed!\n\n"
+            f"Visit https://teledict.in/group/{chat.id}/edit to finish setup.",
             parse_mode="Markdown"
         )
-        logger.info(f"Group confirmed and saved: {title} ({chat.id})")
-        
+        logger.info(f"Confirmation message sent for group {chat.title} ({chat.id})")
+
     except Exception as e:
         logger.exception("Error during /confirm")
-        await update.message.reply_text("❌ An error occurred while confirming the group.")
+        try:
+            await status_msg.edit_text("❌ An error occurred while confirming the group.", parse_mode="Markdown")
+        except Exception:
+            pass
