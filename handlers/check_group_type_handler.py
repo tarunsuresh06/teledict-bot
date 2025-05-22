@@ -1,6 +1,6 @@
 from telegram import Update
 from telegram.ext import ContextTypes
-from logging_setup import logger  # optional logging module
+from logging_setup import logger
 
 async def checkgroup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -10,11 +10,11 @@ async def checkgroup(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logger.info(f"/checkgroup used in {title} ({chat_id}) - type: {chat_type}")
 
-    try:
-        # Delete the user's command message
-        await update.message.delete()
-    except Exception as e:
-        logger.error(f"Failed to delete command message: {e}")
+    # try:
+    #     # Delete the user's command message
+    #     await update.message.delete()
+    # except Exception as e:
+    #     logger.error(f"Failed to delete command message: {e}")
 
     if chat_type == "private":
         await update.message.reply_text("👤 This is a private chat.")

@@ -2,6 +2,9 @@ from logging_setup import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 from supabase_setup import supabase
+import os
+
+DOMAIN = os.getenv("WEB_DOMAIN")
 
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -59,11 +62,11 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await status_msg.edit_text("✅ You are the group owner. Checking your Teledict profile...", parse_mode="Markdown")
 
-        # 4. Check if user exists in 'profiles'
-        profile_resp = supabase.table("profiles").select("telegram_id").eq("telegram_id", str(user.id)).execute()
+        # 4. Check if user exists in 'users'
+        profile_resp = supabase.table("users").select("telegram_id").eq("telegram_id", str(user.id)).execute()
         if not profile_resp.data:
-            await status_msg.edit_text("❌ You must sign up at https://teledict.in/ before confirming a group.", parse_mode="Markdown")
-            logger.info(f"User {user.username} ({user.id}) not found in profiles table.")
+            await status_msg.edit_text(f"❌ You must sign up at {DOMAIN} before confirming a group.", parse_mode="Markdown")
+            logger.info(f"User {user.username} ({user.id}) not found in users table.")
             return
 
         await status_msg.edit_text("✅ Profile found. Checking if group already exists...", parse_mode="Markdown")
@@ -99,7 +102,7 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 8. Success message
         await status_msg.edit_text(
             f"✅ Group confirmed!\n\n"
-            f"Visit https://teledict.in/group/{chat.id}/edit to finish setup.",
+            f"Visit {DOMAIN}/group/{chat.id}/edit to finish setup.",
             parse_mode="Markdown"
         )
         logger.info(f"Confirmation message sent for group {chat.title} ({chat.id})")
