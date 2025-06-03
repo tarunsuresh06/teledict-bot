@@ -89,6 +89,7 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         member_count = await context.bot.get_chat_member_count(chat.id)
 
         # 7. Insert group into 'groups' table
+        user_id = supabase.table("users").select("id").eq("telegram_id", str(user.id)).execute()
         group_data = {
             "telegram_chat_id": str(chat.id),
             "title": title,
@@ -96,10 +97,12 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "invite_link": invite_link,
             "member_count": member_count,
             "type": type,
-            "submitted_by": profile_resp.data[0]["id"],
+            "submitted_by": user_id.data[0]["id"],
         }
         supabase.table("listings").insert(group_data).execute()
         logger.info(f"Group inserted: {title} ({chat.id}) by {user.username} ({user.id})")
+
+     
 
         # 8. Success message
         await status_msg.edit_text(
