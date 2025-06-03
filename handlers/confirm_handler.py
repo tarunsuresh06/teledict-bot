@@ -72,7 +72,7 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text("✅ Profile found. Checking if group already exists...", parse_mode="Markdown")
 
         # 5. Check if group already exists
-        group_resp = supabase.table("groups").select("id").eq("chat_id", str(chat.id)).execute()
+        group_resp = supabase.table("listings").select("id").eq("telegram_chat_id", str(chat.id)).execute()
         if group_resp.data:
             await status_msg.edit_text("⚠️ This group is already listed in the directory.", parse_mode="Markdown")
             logger.info(f"Group {chat.title} ({chat.id}) already exists in groups table.")
@@ -83,20 +83,22 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 6. Gather group data
         full_chat = await context.bot.get_chat(chat.id)
         title = full_chat.title
+        type = full_chat.type
         username = getattr(full_chat, "username", None)
         invite_link = getattr(full_chat, "invite_link", None) or "No link set"
         member_count = await context.bot.get_chat_member_count(chat.id)
 
         # 7. Insert group into 'groups' table
         group_data = {
-            "chat_id": str(chat.id),
+            "telegram_chat_id": str(chat.id),
             "title": title,
             "username": username,
             "invite_link": invite_link,
             "member_count": member_count,
-            "submitted_by": str(user.id)
+            "type": type,
+            "submitted_by": profile_resp.data[0]["id"],
         }
-        supabase.table("groups").insert(group_data).execute()
+        supabase.table("listings").insert(group_data).execute()
         logger.info(f"Group inserted: {title} ({chat.id}) by {user.username} ({user.id})")
 
         # 8. Success message
